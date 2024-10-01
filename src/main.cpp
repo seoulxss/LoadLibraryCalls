@@ -74,25 +74,32 @@ bool myLdrLoadDll(const wchar_t* name)
 	if (!name)
 		return false;
 
-	//Get func
+	//Get the func LdrLoadDll which is exported in ntdll.dll
+	//We need to reinterpret_cast this, as GetProcAddress returns a FARPROC
 	auto Proc = reinterpret_cast<tLdrLoadDll*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "LdrLoadDll"));
 	if (!Proc)
 		return false;
 
-	//call it
+	//Our handle buffer, which will contain the HMODULE
 	HANDLE lib = nullptr;
 
-	//Get RtlInitUnicodeString
+	//Get RtlInitUnicodeString, which is also exported by ntdll.dll
+	//We also need to reinterpret_cast, as this also returns a FARPROC
 	auto Rtl = reinterpret_cast<tRtlInitUnicodeString*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlInitUnicodeString"));
 	if (!Rtl)
 		return false;
 
+	//Our UNICODE_STRING buffer
 	UNICODE_STRING str;
-	Rtl(&str, name);
-	NTSTATUS stat = Proc(nullptr, 0, &str, &lib);
 
+	//We call the RtlInitUnicodeString function, to fill out our "str" buffer
+	Rtl(&str, name);
+
+	//We call the "Proc" which is our "LdrLoadDll" function
+	NTSTATUS stat = Proc(nullptr, 0, &str, &lib);
 	if (NT_SUCCESS(stat))
 	{
+		//Free the library again, if it was successfully loaded
 		FreeLibrary(static_cast<HMODULE>(lib));
 		return true;
 	}
@@ -106,29 +113,39 @@ bool myLdrpLoadDll(const wchar_t* name)
 	if (!name)
 		return false;
 
-	//Get func
+	//Get the func LdprLoadDll via Patternscanning
+	//We need to reinterpret_cast this, as PatternScan returns a DWORD64
 	auto Proc = reinterpret_cast<tLdrpLoadDll*>(PatternScan(L"ntdll.dll", "40 55 53 56 57 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 45 ? 48 8B FA"));
 	if (!Proc)
 		return false;
 
-	//call it
+	//Our handle buffer, which will contain the HMODULE
 	HANDLE lib = nullptr;
 
-	//Get rtl
+	//Get RtlInitUnicodeString, which is also exported by ntdll.dll
+	//We also need to reinterpret_cast, as this also returns a FARPROC
 	auto Rtl = reinterpret_cast<tRtlInitUnicodeString*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlInitUnicodeString"));
 	if (!Rtl)
 		return false;
 
+	//Our UNICODE_STRING buffer
 	UNICODE_STRING str;
+
+	//We call the RtlInitUnicodeString function, to fill out our "str" buffer
 	Rtl(&str, name);
 
+	//A unknown struct buffer
 	LDR_UNKSTRUCT unk_struct{};
+
+	//A pointer to a LDR_DATA_TABLE_ENTRY, which contains our loaded Dll later
 	LDR_DATA_TABLE_ENTRY* entry= nullptr;
 
+	//Call LdrpLoadDll
 	NTSTATUS stat = Proc(&str, &unk_struct, 0, &entry);
-	lib = entry->DllBase;
 	if (NT_SUCCESS(stat))
 	{
+		//Free dll if it was loaded successfully
+		lib = entry->DllBase;
 		FreeLibrary(HMODULE(EntryOut->DllBase));
 		return true;
 	}
@@ -141,40 +158,60 @@ bool myLdrpLoadDllInternal(const wchar_t* name)
 	if (!name)
 		return false;
 
-	//Get func
+	//Get the func LdrpLoadDllInternal via Patternscanning
+	//We need to reinterpret_cast this, as PatternScan returns a DWORD64
 	auto Proc = reinterpret_cast<tLdrpLoadDllInternal*>(PatternScan(L"ntdll.dll", "4C 8B DC 45 89 43 ? 49 89 53 ? 49 89 4B ? 53 56 57 41 54 41 55 41 56 41 57 48 83 EC ? 45 8B E1 41 8B F0"));
 	if (!Proc)
 		return false;
 
-	//call it
+	//Our handle buffer, which will contain the HMODULE
 	HANDLE lib = nullptr;
 
-	//Get rtl
+	//Get RtlInitUnicodeString, which is also exported by ntdll.dll
+	//We also need to reinterpret_cast, as this also returns a FARPROC
 	auto Rtl = reinterpret_cast<tRtlInitUnicodeString*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlInitUnicodeString"));
 	if (!Rtl)
 		return false;
 
-	//Weird!
+	//Our UNICODE_STRING buffer
 	UNICODE_STRING str;
+
+	//We call the RtlInitUnicodeString function, to fill out our "str" buffer
+	//This is somehow a bit wird, in this case we are not allowed to give the FullPath
+	//I did not reverse this further as it was already really exhausting, if you find out more, please let me know! :)
 	Rtl(&str, L"dfscli.dll");
 
+	//A unknown struct buffer
 	LDR_UNKSTRUCT unk_struct = {};
+
+	//Again our pointer to LDR_DATA_TABLE_ENTRY for our loaded Dll
 	LDR_DATA_TABLE_ENTRY* EntryOut = nullptr;
 
 	//Get two LdrEntrys
+	//This is really important, we actually need to get two entrys
+	//We firstly get the Teb (Thread Environment Block), which has a pointer to the PEB (Process Environment Block)
+	//The peb has a pointer to the Ldr
+	//The Ldr has a pointer to the InMemoryOrderModuleList Linked List
+	//We use the CONTAINING_RECORD macro to get the entry
+	
 	LDR_DATA_TABLE_ENTRY pFirst = *CONTAINING_RECORD(NtCurrentTeb()->ProcessEnvironmentBlock->Ldr->InMemoryOrderModuleList.Blink, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
 	LDR_DATA_TABLE_ENTRY pSecond = *CONTAINING_RECORD(NtCurrentTeb()->ProcessEnvironmentBlock->Ldr->InMemoryOrderModuleList.Flink, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
 
-	//Checkout pStat!
+	//pStat is a buffer for the parameter
+	// stat will not have a real "NTSTATUS"
+	// you need to checkout pStat!
 	NTSTATUS pStat = {};
+
+	//We call our LdrpLoadDllInternal
 	NTSTATUS stat = Proc(&str, &unk_struct, 0, 0, &pFirst, &pSecond, &EntryOut, &pStat, 0);
+
+	//IO check both status values
 	if (NT_SUCCESS(stat) && NT_SUCCESS(pStat))
 	{
-		lib = nullptr;
+		lib = EntryOut->DllBase;
 		FreeLibrary(HMODULE());
 		return true;
 	}
-
 	return false;
 }
 
