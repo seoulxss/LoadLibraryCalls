@@ -129,7 +129,7 @@ bool myLdrpLoadDll(const wchar_t* name)
 	lib = entry->DllBase;
 	if (NT_SUCCESS(stat))
 	{
-		FreeLibrary(HMODULE());
+		FreeLibrary(HMODULE(EntryOut->DllBase));
 		return true;
 	}
 
