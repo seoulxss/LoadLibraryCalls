@@ -177,7 +177,7 @@ bool myLdrpLoadDllInternal(const wchar_t* name)
 	UNICODE_STRING str;
 
 	//We call the RtlInitUnicodeString function, to fill out our "str" buffer
-	//This is somehow a bit wird, in this case we are not allowed to give the FullPath
+	//This is somehow a bit weird, in this case we are not allowed to give the FullPath
 	//I did not reverse this further as it was already really exhausting, if you find out more, please let me know! :)
 	Rtl(&str, L"dfscli.dll");
 
